@@ -29,6 +29,7 @@ function _open_auto_uncompress(filename::String)
     f = open(filename, "r")
     try
         hdr = read(f, Array(Uint8, 3))
+        seek(f, 0)
         if hdr == FILE_HDR_GZIP
             close(f)
             f = GZip.open(filename, "r")
@@ -53,6 +54,7 @@ end
 
 function _guess_file_type(io::IOStream)
     hdr = read(io, Array(Uint8, 10))
+    seek(io, 0)
 
     beginswith(hdr, FILE_HDR_NPY)               && return FILE_TYPE_NPY
     beginswith(hdr, FILE_HDR_AAGRID)            && return FILE_TYPE_AAGRID
@@ -78,7 +80,7 @@ type FileAAGridHeader
 
     FileAAGridHeader() = new(0, 0, 0.0, 0.0, 0.0, nothing, [], 0, "")
 
-    function FileAAGrid(filename::String)
+    function FileAAGridHeader(filename::String="")
         ncols, nrows, xllcorner, yllcorner, cellsize, nodata, file_type = _ascii_grid_read_header(filename)
         new(ncols, nrows, xllcorner, yllcorner, cellsize, nodata, file_type, filename)
     end
@@ -126,7 +128,7 @@ end
 
 type FileAAGrid
     hdr::FileAAGridHeader
-    pmap::Array
+    data::Array
     data_type::String
 
     FileAAGrid() = new(FileAAGridHeader(), [])
@@ -135,26 +137,26 @@ type FileAAGrid
         hdr = FileAAGridHeader(filename)
 
         if hdr.file_type == FILE_TYPE_NPY
-            pmap = np.load(filename, mmap_mode=nothing)
-            pmap = convert(Array{Float64, 2}, pmap)
+            data = np.load(filename, mmap_mode=nothing)
+            data = convert(Array{Float64, 2}, data)
         else
             if hdr.nodata == nothing
-                pmap = np.loadtxt(filename, skiprows=5, dtype=data_type)
+                data = np.loadtxt(filename, skiprows=5, dtype=data_type)
             else
-                pmap = np.loadtxt(filename, skiprows=6, dtype=data_type)
-                pmap[find(x->(x==nodata), pmap)] = -9999
+                data = np.loadtxt(filename, skiprows=6, dtype=data_type)
+                data[find(x->(x==nodata), data)] = -9999
             end
         end
 
-        (hdr.nrows == 1) && (pmap = reshape(pmap, 1, length(pmap)))
-        (hdr.ncols == 1) && (pmap = reshape(pmap, length(pmap), 1))
-        new(hdr, pmap, data_type)
+        (hdr.nrows == 1) && (data = reshape(data, 1, length(data)))
+        (hdr.ncols == 1) && (data = reshape(data, length(data), 1))
+        new(hdr, data, data_type)
     end
 end
 
 function write(filename::String, aagrid::FileAAGrid; file_type=aagrid.hdr.file_type, compress=false)
     if file_type == FILE_TYPE_NPY
-        np.save(filename, aagrid.pmap)
+        np.save(filename, aagrid.data)
     else
         io = compress ? GZip.open(filename, "w") : open(filename, "w")
         try
@@ -174,7 +176,7 @@ function write(io::IOStream, aagrid::FileAAGrid)
     println(io, "cellsize      $(hdr.cellsize)")
     (hdr.nodata != nothing) && println(io, "NODATA_value  $(hdr.nodata)")
 
-    writedlm(io, aagrid.pmap, ' ')
+    writedlm(io, aagrid.data, ' ')
 end
 
 #######################################
@@ -182,5 +184,22 @@ end
 #######################################
 
 type FileTxtList
+    data::Array
+    data_type::String
+
+    file_name::String
+
+    function FileTxtList(filename::String, habitat_size::FileAAGridHeader, data_type::String="float")
+        typ = (data_type == "float") ? Float64 : (data_type == "int") ? Int : error("invalid data type $data_type")
+        data = readdlm(filename)
+
+        data2 = ceil(habitat_size.nrows - (data[:,3] - habitat_size.yllcorner) / habitat_size.cellsize) - 1
+        data3 = ceil((data[:,2] - habitat_size.xllcorner) / habitat_size.cellsize) - 1
+        data[:,2] = data2
+        data[:,3] = data3
+        data = convert(Array{typ, 2}, data)
+
+        new(data, data_type, filename)
+    end
 end
 

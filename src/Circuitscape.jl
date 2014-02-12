@@ -7,9 +7,10 @@ using PyCall
 
 @pyimport numpy as np
 
-import Base.get, Base.write, Base.read, Base.show
+import  Base.get, Base.write, Base.read, Base.show
 
-export CSCfg, get, set, write, read, show
+export  CSCfg, get, set, write, read, show,
+        FileTxtList, FileAAGrid, FileAAGridHeader
 
 include("log.jl")
 include("cfg.jl")
