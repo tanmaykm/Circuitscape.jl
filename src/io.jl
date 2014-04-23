@@ -7,6 +7,8 @@ const FILE_TYPE_TXTLIST             = 3
 const FILE_TYPE_INCL_PAIRS_AAGRID   = 4
 const FILE_TYPE_INCL_PAIRS          = 5
 
+const STR_FILE_TYPES = ["numpy", "aagrid", "text list", "include grid", "include pairs"]
+
 const FILE_HDR_GZIP                 = [0x1f, 0x8b, 0x08]
 const FILE_HDR_NPY                  = [0x93, "NUMPY".data]
 const FILE_HDR_AAGRID               = ["ncols".data]
@@ -28,7 +30,7 @@ _check_file_exists(filename::String) = ((stat(filename).ctime == 0) && error("Fi
 function _open_auto_uncompress(filename::String)
     f = open(filename, "r")
     try
-        hdr = read(f, Array(Uint8, 3))
+        hdr = read!(f, Array(Uint8, 3))
         seek(f, 0)
         if hdr == FILE_HDR_GZIP
             close(f)
@@ -44,16 +46,15 @@ end
 function _guess_file_type(filename::String) 
     io = _open_auto_uncompress(filename)
     try
-        ret = _guess_file_type(io)
-    catch e
+        return _guess_file_type(io)
+    catch ex
         close(io)
-        rethrow(e)
+        rethrow(ex)
     end
-    ret
 end
 
-function _guess_file_type(io::IOStream)
-    hdr = read(io, Array(Uint8, 10))
+function _guess_file_type(io::IO)
+    hdr = read!(io, Array(Uint8, 10))
     seek(io, 0)
 
     beginswith(hdr, FILE_HDR_NPY)               && return FILE_TYPE_NPY
@@ -87,8 +88,14 @@ type FileAAGridHeader
 
     function _ascii_grid_read_header(filename::String)
         _check_file_exists(filename)
+
         io = _open_auto_uncompress(filename)
+
         try
+            ncols = nrows = 0
+            xllcorner = yllcorner = cellsize = 0.0
+            nodata = nothing
+
             file_type = _guess_file_type(io)
             if file_type == FILE_TYPE_NPY
                 file_base, file_extension = splitext(filename)
@@ -106,7 +113,6 @@ type FileAAGridHeader
                     error("Unable to read ASCII grid: \"$(filename)\".")
                 end
                
-                nodata = nothing 
                 next_line = split(readline(io))
                 if length(next_line) == 2
                     try
@@ -118,13 +124,20 @@ type FileAAGridHeader
                     end
                 end   
             end
+
+            return ncols, nrows, xllcorner, yllcorner, cellsize, nodata, file_type
+
         finally
             close(io)
         end
-
-        return ncols, nrows, xllcorner, yllcorner, cellsize, nodata, file_type
     end
 end
+
+function show(io::IO, hdr::FileAAGridHeader)
+    println("$(STR_FILE_TYPES[hdr.file_type]) $(hdr.nrows)x$(hdr.ncols) ($(hdr.file_name))")
+    println("llcorner: ($(hdr.xllcorner),$(hdr.yllcorner)). cellsize: $(hdr.cellsize). nodata: $(hdr.nodata)") 
+end
+
 
 type FileAAGrid
     hdr::FileAAGridHeader
@@ -144,7 +157,7 @@ type FileAAGrid
                 data = np.loadtxt(filename, skiprows=5, dtype=data_type)
             else
                 data = np.loadtxt(filename, skiprows=6, dtype=data_type)
-                data[find(x->(x==nodata), data)] = -9999
+                data[find(x->(x==hdr.nodata), data)] = -9999
             end
         end
 
@@ -152,6 +165,12 @@ type FileAAGrid
         (hdr.ncols == 1) && (data = reshape(data, length(data), 1))
         new(hdr, data, data_type)
     end
+end
+
+function show(io::IO, aag::FileAAGrid)
+    print(io, "$(aag.data_type) ")
+    show(io, aag.hdr)
+    show(io, aag.data)
 end
 
 function write(filename::String, aagrid::FileAAGrid; file_type=aagrid.hdr.file_type, compress=false)
@@ -167,7 +186,7 @@ function write(filename::String, aagrid::FileAAGrid; file_type=aagrid.hdr.file_t
     end
 end
 
-function write(io::IOStream, aagrid::FileAAGrid)
+function write(io::IO, aagrid::FileAAGrid)
     hdr = aagrid.hdr
     println(io, "ncols         $(hdr.ncols)")
     println(io, "nrows         $(hdr.nrows)")
@@ -184,22 +203,22 @@ end
 #######################################
 
 type FileTxtList
-    data::Array
-    data_type::String
-
-    file_name::String
-
-    function FileTxtList(filename::String, habitat_size::FileAAGridHeader, data_type::String="float")
-        typ = (data_type == "float") ? Float64 : (data_type == "int") ? Int : error("invalid data type $data_type")
-        data = readdlm(filename)
-
-        data2 = ceil(habitat_size.nrows - (data[:,3] - habitat_size.yllcorner) / habitat_size.cellsize) - 1
-        data3 = ceil((data[:,2] - habitat_size.xllcorner) / habitat_size.cellsize) - 1
-        data[:,2] = data2
-        data[:,3] = data3
-        data = convert(Array{typ, 2}, data)
-
-        new(data, data_type, filename)
-    end
+#    data::Array
+#    data_type::String
+#
+#    file_name::String
+#
+#    function FileTxtList(filename::String, habitat_size::FileAAGridHeader, data_type::String="float")
+#        typ = (data_type == "float") ? Float64 : (data_type == "int") ? Int : error("invalid data type $data_type")
+#        data = readdlm(filename)
+#
+#        data2 = ceil(habitat_size.nrows - (data[:,3] - habitat_size.yllcorner) / habitat_size.cellsize) - 1
+#        data3 = ceil((data[:,2] - habitat_size.xllcorner) / habitat_size.cellsize) - 1
+#        data[:,2] = data2
+#        data[:,3] = data3
+#        data = convert(Array{typ, 2}, data)
+#
+#        new(data, data_type, filename)
+#    end
 end
 

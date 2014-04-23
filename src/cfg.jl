@@ -1,4 +1,3 @@
-
 const FILE_PATH_PROPS = ["polygon_file", "source_file", "ground_file", "mask_file", "output_file", "habitat_file", "point_file", "reclass_file"]
 const DEFAULT_CFG     = {
         "Version" => {
@@ -121,6 +120,7 @@ end
 
 approp(val) = val
 function approp(val::String)
+    ((val == "nothing") || (val == "None")) && (return nothing)
     try
         val = parsebool(val)
     catch
@@ -183,4 +183,20 @@ end
 
 get(cscfg::CSCfg, key::String) = cscfg.val_dict[key]
 set(cscfg::CSCfg, key::String, val::IniFile.INIVAL) = (cscfg.val_dict[key] = approp(val))
+function get(cscfg::CSCfg, key::String, typ::Type)
+    v = get(cscfg, key)
+    vtyp = typeof(v)
+    if isa(v, String) && !issubtype(vtyp, typ) 
+        lcv = lowercase(v)
+        ((lcv == "none") || (lcv == "nothing")) && (return nothing)
+        if (typ == Bool)
+            (v == "false") && (return false)
+            (v == "true") && (return true)
+            error("Invalid boolean value $v")
+        else 
+            return convert(typ, v)
+        end
+    end
+    return v
+end
 
