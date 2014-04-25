@@ -16,3 +16,4 @@ fp = Circuitscape.FocalPoints(FILE_POINTS_ASC)
 @assert fp.data[3,1] == 3
 @assert fp.data[10,2] == 10
 
+

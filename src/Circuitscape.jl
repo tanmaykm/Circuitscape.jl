@@ -1,5 +1,6 @@
 module Circuitscape
 
+using Graphs
 using IniFile
 using Logging
 using GZip
